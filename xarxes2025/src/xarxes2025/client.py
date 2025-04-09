@@ -1,5 +1,7 @@
 import sys 
 
+import socket
+
 from tkinter import Tk, Label, Button, W, E, N, S
 from tkinter import messagebox
 import tkinter as tk
@@ -11,20 +13,37 @@ from PIL import Image, ImageTk
 import io
 
 class Client(object):
-    def __init__(self, port):       
+    def __init__(self, server_port, filename, host = "127.0.0.1", udp_port = 25000):
+           
         """
         Initialize a new VideoStreaming client.
 
         :param port: The port to connect to.
         :param filename: The filename to ask for to connect to.
         """
-
-        
-    def __init__(self, server_port, filename):
-        logger.debug(f"Client created ")
+        logger.debug(f"Client creat")
         self.server_port = server_port
+        self.server_host = host
+        self.filename = filename
+        self.udp_port = udp_port
+
+        self.rtsp_socket = None
+        self.seq = 1
+        self.session_id = None
+
         self.create_ui()
 
+    def connect_to_server(self):
+        self.rtsp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            self.rtsp_socket.connect((self.server_host, self.server_port))
+            logger.info(f"Conectat a server")
+        except Exception as e:
+            logger.error(f"Conexio fallada")
+            messagebox.showerror("Error conexio", f"NO es pot conectar amb el servidor")
+
+    def send_setup_request(self):
+        
         
     def create_ui(self):
         """
