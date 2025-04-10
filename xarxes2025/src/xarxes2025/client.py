@@ -1,6 +1,7 @@
 import sys 
 
 import socket
+import threading
 
 from tkinter import Tk, Label, Button, W, E, N, S
 from tkinter import messagebox
@@ -13,7 +14,7 @@ from PIL import Image, ImageTk
 import io
 
 class Client(object):
-    def __init__(self, server_port, filename, host = "127.0.0.1", udp_port = 25000):
+    def __init__(self, server_port, filename, host , udp_port ):
            
         """
         Initialize a new VideoStreaming client.
@@ -38,12 +39,35 @@ class Client(object):
         try:
             self.rtsp_socket.connect((self.server_host, self.server_port))
             logger.info(f"Conectat a server")
+            self.send_setup_request()
+        
         except Exception as e:
             logger.error(f"Conexio fallada")
             messagebox.showerror("Error conexio", f"NO es pot conectar amb el servidor")
-
-    def send_setup_request(self):
         
+    def send_setup_request(self):
+        request = (
+            f"SETUP {self.filename} RTSP/1.0\r\n"
+            f"CSeq: {self.seq}\r\n"
+            f"Transport: RTP/UDP; client_port = {self.udp_port}\r\n"
+            f"\r\n"
+        )
+        logger.error(f"Enviant SETUP request:\n{request}")
+
+        try:
+            self.rtsp_socket.send(request.encode())
+
+            response = self.rtsp_socket.recv(1024).decode()
+            logger.debug(f"Rebut del servidor")
+
+            if "200 OK" in response:
+                self.text["text"] = "SETUP OK"
+            else:
+                self.text["text"] = "SETUP FAILED"
+        except Exception as e:
+            logger.error(f"Fallo d'enviament de SETUP: {e}")
+            self.text["text"] = f"error SETUP: {e}"
+
         
     def create_ui(self):
         """
@@ -115,7 +139,10 @@ class Client(object):
         """
         logger.debug("Setup button clicked")
         self.text["text"] = "Setup button clicked"
-        self.updateMovie(None)
+        
+        if not self.rtsp_socket:
+            self.connect_to_server()
+        self.send_setup_request
 
 
     def updateMovie(self, data):

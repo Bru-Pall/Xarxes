@@ -69,12 +69,12 @@ def cli(ctx, debug, debug_level, debug_file, debug_filename):
     "-h",
     "--host",
     help="IP Address for RTSP (TCP)",
-    default="localhost",
+    default="127.0.0.1",
     show_default=True,
     type=str
 )
 @click.option(
-    "--frame-rate",
+    "--max-frames",
     help="Maximum number of frames to stream",
     default=None,
     type=int
@@ -100,7 +100,7 @@ def cli(ctx, debug, debug_level, debug_file, debug_filename):
     show_default=True,
     type=int
 )
-def server(ctx, port, host, max_frame, frame_rate, loss_rate, error):
+def server(ctx, port, host, max_frames, frame_rate, loss_rate, error):
     """
     Start an RTSP server streaming video.
 
@@ -137,7 +137,7 @@ def server(ctx, port, host, max_frame, frame_rate, loss_rate, error):
     "-h",
     "--host",
     help="IP Address for RSTP server to connect (TCP)",
-    default="localhost",
+    default="127.0.0.1",
     show_default=True,
     type=str
 )
@@ -149,7 +149,7 @@ def server(ctx, port, host, max_frame, frame_rate, loss_rate, error):
     show_default=True,
     type=int
 )
-def client(ctx, videofile, port):
+def client(ctx, videofile, port, host, udp_port):
     """
     Start an RTSP client streaming video.
 
@@ -158,5 +158,5 @@ def client(ctx, videofile, port):
     port (default is 4321).
     """
     logger.info("Client xarxes 2025 video streaming")
-    client = Client(port = port, host = host, udp_port = udp_port, filename = videofile)
+    client = Client(port, videofile, host, udp_port, )
     client.root.mainloop()
