@@ -3,6 +3,7 @@ import sys
 import socket
 import threading
 
+from xarxes2025.udpdatagram import UDPDatagram
 from tkinter import Tk, Label, Button, W, E, N, S
 from tkinter import messagebox
 import tkinter as tk
@@ -33,6 +34,27 @@ class Client(object):
         self.session_id = None
 
         self.create_ui()
+
+    def create_udp_socket(self):
+        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.udp_socket.bind(('', self.udp_port))  # '' per escoltar en totes les IP locals
+        logger.info(f"UDP socket listening on port {self.udp_port}")
+
+    def listen_udp(self):
+        while True:
+            try:
+                data, addr = self.udp_socket.recvfrom(65536)
+                logger.debug(f"Received UDP packet from {addr}")
+
+               # Ara processem el frame rebut
+                datagrama = UDPDatagram(10,10)
+                datagrama.decode(data)
+                self.updateMovie(datagrama.get_payload())
+
+            except Exception as e:
+                logger.error(f"Error receiving UDP packet: {e}")
+                break
+
 
     def connect_to_server(self):
         self.rtsp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -68,6 +90,32 @@ class Client(object):
             logger.error(f"Fallo d'enviament de SETUP: {e}")
             self.text["text"] = f"error SETUP: {e}"
 
+    def send_play_request(self):
+        request = (
+            f"PLAY {self.filename} RTSP/1.0\r\n"
+            f"CSeq: {self.seq + 1}\r\n"
+            f"Session: {self.session_id}\r\n"
+            f"\r\n"
+    )
+        logger.debug(f"Sending PLAY request:\n{request}")
+
+        try:
+            self.rtsp_socket.send(request.encode())
+        
+            response = self.rtsp_socket.recv(1024).decode()
+            logger.debug(f"Received PLAY response:\n{response}")
+
+            if "200 OK" in response:
+                self.text["text"] = "PLAY OK ✅"
+                # Aquí después deberás abrir un socket UDP para empezar a recibir frames
+                self.create_udp_socket()
+                threading.Thread(target=self.listen_udp, daemon=True).start()
+            else:
+                self.text["text"] = "PLAY FAILED ❌"
+        except Exception as e:
+            logger.error(f"Failed to send PLAY request: {e}")
+            self.text["text"] = f"Error PLAY: {e}"
+
         
     def create_ui(self):
         """
@@ -90,7 +138,7 @@ class Client(object):
 
 		# Create Buttons
         self.setup = self._create_button("Setup", self.ui_setup_event, 0, 0)
-        # self.start = self._create_button("Play", self.ui_play_event, 0, 1)
+        self.start = self._create_button("Play", self.ui_play_event, 0, 1)
         # self.pause = self._create_button("Pause", self.ui_pause_event, 0, 2)
         # self.teardown = self._create_button("Teardown", self.ui_teardown_event, 0, 3)
 
@@ -142,7 +190,20 @@ class Client(object):
         
         if not self.rtsp_socket:
             self.connect_to_server()
-        self.send_setup_request
+        self.send_setup_request()
+
+    def ui_play_event(self):
+        """
+        Handle the Play button click event.
+        """
+        logger.debug("Play button clicked")
+        self.text["text"] = "Sending PLAY request..."
+
+        if self.rtsp_socket:
+            self.send_play_request()
+        else:
+            logger.error("RTSP socket not connected")
+            self.text["text"] = "Error: No RTSP connection"
 
 
     def updateMovie(self, data):
@@ -155,6 +216,7 @@ class Client(object):
         # photo = ImageTk.PhotoImage(Image.open(io.BytesIO(data)))
 
 
-        photo = ImageTk.PhotoImage(Image.open('rick.webp'))
+        photo = ImageTk.PhotoImage(Image.open(io.BytesIO(data)))
         self.movie.configure(image = photo, height=380) 
         self.movie.photo_image = photo
+

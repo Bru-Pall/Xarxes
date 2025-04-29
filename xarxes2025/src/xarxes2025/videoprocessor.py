@@ -59,7 +59,6 @@ class VideoProcessor(object):
         return data
         
     def get_frame_number(self):
-    """Return the current frame number being processed."""
 
         return self.frame_num
 
