@@ -33,6 +33,10 @@ class Client(object):
         self.seq = 1
         self.session_id = None
 
+        self.playing = False
+        self.paused = False
+        self.udp_socket = None
+
         self.create_ui()
 
     def create_udp_socket(self):
@@ -84,6 +88,7 @@ class Client(object):
 
             if "200 OK" in response:
                 self.text["text"] = "SETUP OK"
+                self.paused = False
             else:
                 self.text["text"] = "SETUP FAILED"
         except Exception as e:
@@ -91,31 +96,65 @@ class Client(object):
             self.text["text"] = f"error SETUP: {e}"
 
     def send_play_request(self):
+        if self.playing and not self.paused:
+            logger.info(f"Already Playing")
+            return
+
         request = (
             f"PLAY {self.filename} RTSP/1.0\r\n"
             f"CSeq: {self.seq + 1}\r\n"
             f"Session: {self.session_id}\r\n"
             f"\r\n"
-    )
+        )
         logger.debug(f"Sending PLAY request:\n{request}")
 
         try:
             self.rtsp_socket.send(request.encode())
-        
             response = self.rtsp_socket.recv(1024).decode()
             logger.debug(f"Received PLAY response:\n{response}")
 
             if "200 OK" in response:
                 self.text["text"] = "PLAY OK ✅"
                 # Aquí después deberás abrir un socket UDP para empezar a recibir frames
-                self.create_udp_socket()
+                if self.udp_socket is None:
+                    self.create_udp_socket()
                 threading.Thread(target=self.listen_udp, daemon=True).start()
+                self.paused = False
+                self.playing = True
             else:
                 self.text["text"] = "PLAY FAILED ❌"
         except Exception as e:
             logger.error(f"Failed to send PLAY request: {e}")
             self.text["text"] = f"Error PLAY: {e}"
 
+
+    def send_pause_request(self):
+        if not self.playing:
+            logger.info("Not playing. Ignoring PAUSE.")
+            return
+
+        request = (
+            f"PAUSE {self.filename} RTSP/1.0\r\n"
+            f"CSeq: {self.seq + 2}\r\n"
+            f"Session: {self.session_id}\r\n"
+            f"\r\n"
+        )
+        logger.debug(f"Sending PAUSE request:\n{request}")
+
+        try:
+            self.rtsp_socket.send(request.encode())
+            response = self.rtsp_socket.recv(1024).decode()
+            logger.debug(f"Received PAUSE response:\n{response}")
+
+            if "200 OK" in response:
+                self.text["text"] = "PAUSE OK ⏸️"
+                self.paused = True  # aturem el flag
+            else:
+                self.text["text"] = "PAUSE FAILED ❌"
+        except Exception as e:
+            logger.error(f"Failed to send PAUSE request: {e}")
+            self.text["text"] = f"Error PAUSE: {e}"
+    
         
     def create_ui(self):
         """
@@ -139,7 +178,7 @@ class Client(object):
 		# Create Buttons
         self.setup = self._create_button("Setup", self.ui_setup_event, 0, 0)
         self.start = self._create_button("Play", self.ui_play_event, 0, 1)
-        # self.pause = self._create_button("Pause", self.ui_pause_event, 0, 2)
+        self.pause = self._create_button("Pause", self.ui_pause_event, 0, 2)
         # self.teardown = self._create_button("Teardown", self.ui_teardown_event, 0, 3)
 
         # Create a label to display the movie
@@ -176,6 +215,7 @@ class Client(object):
         """
         Close the window.
         """
+        self.playing = False
         self.root.destroy()
         logger.debug("Window closed")
         sys.exit(0)
@@ -205,6 +245,16 @@ class Client(object):
             logger.error("RTSP socket not connected")
             self.text["text"] = "Error: No RTSP connection"
 
+    def ui_pause_event(self):
+        logger.debug("Pause button clicked")
+        self.text["text"] = "Sending PAUSE request..."
+
+        if self.rtsp_socket and not self.paused:
+            self.send_pause_request()
+        else:
+            logger.error("RTSP socket not connected")
+            self.text["text"] = "Error: No RTSP connection"
+
 
     def updateMovie(self, data):
         """Update the video frame in the GUI from the byte buffer we received."""
@@ -219,4 +269,3 @@ class Client(object):
         photo = ImageTk.PhotoImage(Image.open(io.BytesIO(data)))
         self.movie.configure(image = photo, height=380) 
         self.movie.photo_image = photo
-

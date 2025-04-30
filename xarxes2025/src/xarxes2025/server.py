@@ -24,6 +24,12 @@ class Server(object):
         self.running = True
         self.state = "INIT"
         self.streaming_thread = None
+        self.client_udp_port = None
+        self.client_address = None
+        self.video = None
+
+        self.paused = False
+        self.streaming = False
 
         logger.debug(f"Server created ")
         self.start_tcp_server()
@@ -40,9 +46,13 @@ class Server(object):
     def start_streaming_udp(self):
         udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         logger.info(f"Starting UDP streaming to {self.client_address}:{self.client_udp_port}")
-
+        self.streaming = True
         try:
-            while True:
+            while self.streaming:
+                if self.paused:
+                    time.sleep(0.1)
+                    continue
+
                 frame_data = self.video.next_frame()
                 if frame_data:
                     datagram = UDPDatagram(self.video.get_frame_number(), frame_data).get_datagram()
@@ -56,6 +66,7 @@ class Server(object):
             logger.error(f"Error in UDP streaming: {e}")
         finally:
             udp_socket.close()
+            self.streaming = False
             logger.info("Stopped UDP streaming")
 
 
@@ -108,6 +119,9 @@ class Server(object):
                     except Exception as e:
                         logger.error(f"Failed to load video: {e}")
                         return
+                    
+                    self.state = "READY"
+                    self.paused = False
 
                     response = (
                         f"RTSP/1.0 200 OK\r\n"
@@ -131,8 +145,25 @@ class Server(object):
                     client_socket.send(response.encode())
                     logger.debug(f"Sent PLAY OK")
 
+                    self.paused = False
                     # Empezamos a mandar frames
-                    threading.Thread(target=self.start_streaming_udp).start()
+                    if not self.streaming_thread or not self.streaming_thread.is_alive():
+                        threading.Thread(target=self.start_streaming_udp).start()
+                
+                elif data.startswith("PAUSE"):
+                    cseq_line = [line for line in data.split("\n") if line.startswith("CSeq")][0]
+                    cseq_value = cseq_line.split(":")[1].strip()
+
+                    self.paused = True
+
+                    response = (
+                        f"RTSP/1.0 200 OK\r\n"
+                        f"CSeq: {cseq_value}\r\n"
+                        f"Session: XARXES_00005017\r\n"
+                        f"\r\n"
+                    )
+                    client_socket.send(response.encode())
+                    logger.debug("Sent PAUSE OK")
 
         except Exception as e:
             logger.error(f"Error handling client {client_address}: {e}")
