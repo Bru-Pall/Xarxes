@@ -9,12 +9,8 @@ from xarxes2025.videoprocessor import VideoProcessor
 
 
 class Server(object):
-    def __init__(self, port, host , max_frames, frame_rate , loss_rate , error):       
-        """
-        Initialize a new VideoStreaming server.
-
-        :param port: The port to listen on.
-        """
+    def __init__(self, port, host, max_frames, frame_rate, loss_rate, error):
+        """Initialize a new VideoStreaming server."""
         self.host = host
         self.port = port
         self.max_frames = max_frames
@@ -27,11 +23,10 @@ class Server(object):
         self.client_udp_port = None
         self.client_address = None
         self.video = None
-
         self.paused = False
         self.streaming = False
 
-        logger.debug(f"Server created ")
+        logger.debug(f"Server created")
         self.start_tcp_server()
 
     def extract_udp_port(self, request_data):
@@ -41,7 +36,7 @@ class Server(object):
                 for part in parts:
                     if "client_port" in part:
                         return int(part.split("=")[1])
-        return 25000  # Valor por defecto
+        return 25000
 
     def start_streaming_udp(self):
         udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -69,8 +64,6 @@ class Server(object):
             self.streaming = False
             logger.info("Stopped UDP streaming")
 
-
-
     def start_tcp_server(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind((self.host, self.port))
@@ -81,7 +74,7 @@ class Server(object):
             while self.running:
                 client_socket, client_address = self.server_socket.accept()
                 logger.error(f"New client connected from {client_address}")
-                threading.Thread(target = self.handle_client, args = (client_socket, client_address)).start()
+                threading.Thread(target=self.handle_client, args=(client_socket, client_address)).start()
         except KeyboardInterrupt:
             logger.warning("Server interrupted by user")
         finally:
@@ -95,7 +88,7 @@ class Server(object):
                 data = client_socket.recv(1024).decode()
                 if not data:
                     logger.info(f"Client {client_address} disconnected")
-                    break  # Si no recibimos más datos, salimos del bucle
+                    break
 
                 logger.debug(f"Received from client:\n{data}")
 
@@ -106,10 +99,7 @@ class Server(object):
                     session_id = "XARXES_00005017"
                     first_line = data.split("\n")[0]
                     parts = first_line.split(" ")
-                    if len(parts) >= 2:
-                        self.filename = parts[1].strip()
-                    else:
-                        self.filename = "rick.webm"  # valor per defecte
+                    self.filename = parts[1].strip() if len(parts) >= 2 else "rick.webm"
                     self.client_address = client_address[0]
                     self.client_udp_port = self.extract_udp_port(data)
 
@@ -119,7 +109,7 @@ class Server(object):
                     except Exception as e:
                         logger.error(f"Failed to load video: {e}")
                         return
-                    
+
                     self.state = "READY"
                     self.paused = False
 
@@ -132,7 +122,7 @@ class Server(object):
                     client_socket.send(response.encode())
                     logger.debug(f"Sent SETUP OK")
 
-                elif data.startswith("PLAY"):  
+                elif data.startswith("PLAY"):
                     cseq_line = [line for line in data.split("\n") if line.startswith("CSeq")][0]
                     cseq_value = cseq_line.split(":")[1].strip()
 
@@ -146,10 +136,9 @@ class Server(object):
                     logger.debug(f"Sent PLAY OK")
 
                     self.paused = False
-                    # Empezamos a mandar frames
                     if not self.streaming_thread or not self.streaming_thread.is_alive():
                         threading.Thread(target=self.start_streaming_udp).start()
-                
+
                 elif data.startswith("PAUSE"):
                     cseq_line = [line for line in data.split("\n") if line.startswith("CSeq")][0]
                     cseq_value = cseq_line.split(":")[1].strip()
@@ -165,29 +154,31 @@ class Server(object):
                     client_socket.send(response.encode())
                     logger.debug("Sent PAUSE OK")
 
+                elif data.startswith("TEARDOWN"):
+                    cseq_line = [line for line in data.split("\n") if line.startswith("CSeq")][0]
+                    cseq_value = cseq_line.split(":")[1].strip()
+
+                    response = (
+                        f"RTSP/1.0 200 OK\r\n"
+                        f"CSeq: {cseq_value}\r\n"
+                        f"Session: XARXES_00005017\r\n"
+                        f"\r\n"
+                    )
+                    client_socket.send(response.encode())
+                    logger.debug(f"Sent TEARDOWN OK")
+
+                    self.running = False
+                    break
+
         except Exception as e:
             logger.error(f"Error handling client {client_address}: {e}")
         finally:
             client_socket.close()
             logger.info(f"Connection with {client_address} closed")
 
-    # # 
-    # # This is not complete code, it's just an skeleton to help you get started.
-    # # You will need to use these snippets to do the code.
-    # # 
-    # #     
     def send_udp_frame(self):
-      
-         # This snippet reads from self.video (a VideoProcessor object) and prepares 
-         # the frame to be sent over UDP. 
-         data = self.video.next_frame()
-         if data:
-             if len(data)>0:
-                     frame_number = self.get_frame_number()
-                     # create UDP Datagram
-
-                     udp_datagram = UDPDatagram(frame_number, data).get_datagram()
-
-                     # send UDP Datagram
-                     socketudp.sendto(udp_datagram, (address, port))
-                        
+        data = self.video.next_frame()
+        if data and len(data) > 0:
+            frame_number = self.get_frame_number()
+            udp_datagram = UDPDatagram(frame_number, data).get_datagram()
+            socketudp.sendto(udp_datagram, (address, port))

@@ -118,7 +118,7 @@ class Client(object):
                 # Aquí después deberás abrir un socket UDP para empezar a recibir frames
                 if self.udp_socket is None:
                     self.create_udp_socket()
-                threading.Thread(target=self.listen_udp, daemon=True).start()
+                    threading.Thread(target=self.listen_udp, daemon=True).start()
                 self.paused = False
                 self.playing = True
             else:
@@ -155,7 +155,40 @@ class Client(object):
             logger.error(f"Failed to send PAUSE request: {e}")
             self.text["text"] = f"Error PAUSE: {e}"
     
-        
+    def send_teardown_request(self):
+        request = (
+            f"TEARDOWN {self.filename} RTSP/1.0\r\n"
+            f"CSeq: {self.seq + 2}\r\n"
+            f"Session: {self.session_id}\r\n"
+            f"\r\n"
+        )
+        logger.debug(f"Sending TEARDOWN request:\n{request}")
+
+        try:
+            self.rtsp_socket.send(request.encode())
+            response = self.rtsp_socket.recv(1024).decode()
+            logger.debug(f"Received TEARDOWN response:\n{response}")
+
+            if "200 OK" in response:
+                self.text["text"] = "TEARDOWN OK ✅"
+                self.playing = False
+
+                # Cierra sockets
+                if self.udp_socket:
+                    self.udp_socket.close()
+                    self.udp_socket = None
+
+                if self.rtsp_socket:
+                    self.rtsp_socket.close()
+                    self.rtsp_socket = None
+
+            else:
+                self.text["text"] = "TEARDOWN FAILED ❌"
+        except Exception as e:
+            logger.error(f"Failed to send TEARDOWN request: {e}")
+            self.text["text"] = f"Error TEARDOWN: {e}"
+
+
     def create_ui(self):
         """
         Create the user interface for the client.
@@ -179,7 +212,7 @@ class Client(object):
         self.setup = self._create_button("Setup", self.ui_setup_event, 0, 0)
         self.start = self._create_button("Play", self.ui_play_event, 0, 1)
         self.pause = self._create_button("Pause", self.ui_pause_event, 0, 2)
-        # self.teardown = self._create_button("Teardown", self.ui_teardown_event, 0, 3)
+        self.teardown = self._create_button("Teardown", self.ui_teardown_event, 0, 3)
 
         # Create a label to display the movie
         self.movie = Label(self.root, height=29)
@@ -254,6 +287,15 @@ class Client(object):
         else:
             logger.error("RTSP socket not connected")
             self.text["text"] = "Error: No RTSP connection"
+
+    def ui_teardown_event(self):
+        logger.debug("Teardown button clicked")
+        self.text["text"] = "Sending TEARDOWN request..."
+
+        if self.rtsp_socket:
+            self.send_teardown_request()
+        else:
+            self.text["text"] = "No RTSP connection"
 
 
     def updateMovie(self, data):
