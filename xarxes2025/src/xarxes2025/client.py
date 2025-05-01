@@ -65,13 +65,16 @@ class Client(object):
         try:
             self.rtsp_socket.connect((self.server_host, self.server_port))
             logger.info(f"Conectat a server")
-            self.send_setup_request()
         
         except Exception as e:
             logger.error(f"Conexio fallada")
             messagebox.showerror("Error conexio", f"NO es pot conectar amb el servidor")
         
     def send_setup_request(self):
+        if not self.rtsp_socket:
+            logger.info(f"Socket RSTP no existeix. Creant un nou")
+            self.connect_to_server()
+            return
         request = (
             f"SETUP {self.filename} RTSP/1.0\r\n"
             f"CSeq: {self.seq}\r\n"
@@ -181,6 +184,12 @@ class Client(object):
                 if self.rtsp_socket:
                     self.rtsp_socket.close()
                     self.rtsp_socket = None
+                
+                self.session_id = None
+                self.playing = False
+                self.paused = False
+                self.seq = 1
+
 
             else:
                 self.text["text"] = "TEARDOWN FAILED ❌"

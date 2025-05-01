@@ -103,12 +103,14 @@ class Server(object):
                     self.client_address = client_address[0]
                     self.client_udp_port = self.extract_udp_port(data)
 
-                    try:
-                        self.video = VideoProcessor(self.filename)
-                        logger.info(f"Video loaded: {self.filename}")
-                    except Exception as e:
-                        logger.error(f"Failed to load video: {e}")
-                        return
+                    if self.video is None:
+
+                        try:
+                            self.video = VideoProcessor(self.filename)
+                            logger.info(f"Video loaded: {self.filename}")
+                        except Exception as e:
+                            logger.error(f"Failed to load video: {e}")
+                            return
 
                     self.state = "READY"
                     self.paused = False
@@ -167,7 +169,9 @@ class Server(object):
                     client_socket.send(response.encode())
                     logger.debug(f"Sent TEARDOWN OK")
 
-                    self.running = False
+                    self.video = None
+                    self.streaming = False
+                    
                     break
 
         except Exception as e:
