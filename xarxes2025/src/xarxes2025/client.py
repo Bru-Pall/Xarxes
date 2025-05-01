@@ -38,6 +38,7 @@ class Client(object):
         self.udp_socket = None
 
         self.create_ui()
+        self.connect_to_server()
 
     def create_udp_socket(self):
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -73,13 +74,11 @@ class Client(object):
     def send_setup_request(self):
         if not self.rtsp_socket:
             logger.info(f"Socket RSTP no existeix. Creant un nou")
-            self.connect_to_server()
             return
         request = (
             f"SETUP {self.filename} RTSP/1.0\r\n"
             f"CSeq: {self.seq}\r\n"
             f"Transport: RTP/UDP; client_port = {self.udp_port}\r\n"
-            f"\r\n"
         )
         logger.error(f"Enviant SETUP request:\n{request}")
 
@@ -107,7 +106,6 @@ class Client(object):
             f"PLAY {self.filename} RTSP/1.0\r\n"
             f"CSeq: {self.seq + 1}\r\n"
             f"Session: {self.session_id}\r\n"
-            f"\r\n"
         )
         logger.debug(f"Sending PLAY request:\n{request}")
 
@@ -138,9 +136,8 @@ class Client(object):
 
         request = (
             f"PAUSE {self.filename} RTSP/1.0\r\n"
-            f"CSeq: {self.seq + 2}\r\n"
+            f"CSeq: {self.seq + 1}\r\n"
             f"Session: {self.session_id}\r\n"
-            f"\r\n"
         )
         logger.debug(f"Sending PAUSE request:\n{request}")
 
@@ -161,9 +158,8 @@ class Client(object):
     def send_teardown_request(self):
         request = (
             f"TEARDOWN {self.filename} RTSP/1.0\r\n"
-            f"CSeq: {self.seq + 2}\r\n"
+            f"CSeq: {self.seq + 1}\r\n"
             f"Session: {self.session_id}\r\n"
-            f"\r\n"
         )
         logger.debug(f"Sending TEARDOWN request:\n{request}")
 

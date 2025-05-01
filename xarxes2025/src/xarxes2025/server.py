@@ -24,7 +24,7 @@ class Server(object):
         self.client_address = None
         self.video = None
         self.paused = False
-        self.streaming = False
+        self.streaming = threading.Event()
 
         logger.debug(f"Server created")
         self.start_tcp_server()
@@ -41,9 +41,9 @@ class Server(object):
     def start_streaming_udp(self):
         udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         logger.info(f"Starting UDP streaming to {self.client_address}:{self.client_udp_port}")
-        self.streaming = True
+        self.streaming.set()
         try:
-            while self.streaming:
+            while self.streaming.is_set():
                 if self.paused:
                     time.sleep(0.1)
                     continue
@@ -61,7 +61,7 @@ class Server(object):
             logger.error(f"Error in UDP streaming: {e}")
         finally:
             udp_socket.close()
-            self.streaming = False
+            self.streaming.clear()
             logger.info("Stopped UDP streaming")
 
     def start_tcp_server(self):
@@ -119,7 +119,6 @@ class Server(object):
                         f"RTSP/1.0 200 OK\r\n"
                         f"CSeq: {cseq_value}\r\n"
                         f"Session: {session_id}\r\n"
-                        f"\r\n"
                     )
                     client_socket.send(response.encode())
                     logger.debug(f"Sent SETUP OK")
@@ -132,7 +131,6 @@ class Server(object):
                         f"RTSP/1.0 200 OK\r\n"
                         f"CSeq: {cseq_value}\r\n"
                         f"Session: XARXES_00005017\r\n"
-                        f"\r\n"
                     )
                     client_socket.send(response.encode())
                     logger.debug(f"Sent PLAY OK")
@@ -151,7 +149,6 @@ class Server(object):
                         f"RTSP/1.0 200 OK\r\n"
                         f"CSeq: {cseq_value}\r\n"
                         f"Session: XARXES_00005017\r\n"
-                        f"\r\n"
                     )
                     client_socket.send(response.encode())
                     logger.debug("Sent PAUSE OK")
@@ -164,14 +161,13 @@ class Server(object):
                         f"RTSP/1.0 200 OK\r\n"
                         f"CSeq: {cseq_value}\r\n"
                         f"Session: XARXES_00005017\r\n"
-                        f"\r\n"
                     )
                     client_socket.send(response.encode())
                     logger.debug(f"Sent TEARDOWN OK")
 
                     self.video = None
-                    self.streaming = False
-                    
+                    self.streaming.clear()
+
                     break
 
         except Exception as e:
