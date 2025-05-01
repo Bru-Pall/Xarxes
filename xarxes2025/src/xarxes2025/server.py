@@ -25,6 +25,7 @@ class Server(object):
         self.video = None
         self.paused = False
         self.streaming = threading.Event()
+        self.udp_socket = None
 
         logger.debug(f"Server created")
         self.start_tcp_server()
@@ -39,8 +40,6 @@ class Server(object):
         return 25000
 
     def start_streaming_udp(self):
-        udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        logger.info(f"Starting UDP streaming to {self.client_address}:{self.client_udp_port}")
         self.streaming.set()
         try:
             while self.streaming.is_set():
@@ -51,7 +50,7 @@ class Server(object):
                 frame_data = self.video.next_frame()
                 if frame_data:
                     datagram = UDPDatagram(self.video.get_frame_number(), frame_data).get_datagram()
-                    udp_socket.sendto(datagram, (self.client_address, self.client_udp_port))
+                    self.udp_socket.sendto(datagram, (self.client_address, self.client_udp_port))
                     logger.debug(f"Sent frame {self.video.get_frame_number()}")
                     time.sleep(1 / self.frame_rate)
                 else:
@@ -60,7 +59,7 @@ class Server(object):
         except Exception as e:
             logger.error(f"Error in UDP streaming: {e}")
         finally:
-            udp_socket.close()
+            self.udp_socket.close()
             self.streaming.clear()
             logger.info("Stopped UDP streaming")
 
@@ -102,7 +101,7 @@ class Server(object):
                     self.filename = parts[1].strip() if len(parts) >= 2 else "rick.webm"
                     self.client_address = client_address[0]
                     self.client_udp_port = self.extract_udp_port(data)
-
+                    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                     if self.video is None:
 
                         try:
