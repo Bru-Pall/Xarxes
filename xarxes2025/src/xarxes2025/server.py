@@ -43,6 +43,7 @@ class Server(object):
         self.streaming.set()
         try:
             while self.streaming.is_set():
+                logger.error("a")
                 if self.paused:
                     time.sleep(0.1)
                     continue
@@ -58,10 +59,7 @@ class Server(object):
                     break
         except Exception as e:
             logger.error(f"Error in UDP streaming: {e}")
-        finally:
-            self.udp_socket.close()
-            self.streaming.clear()
-            logger.info("Stopped UDP streaming")
+        
 
     def start_tcp_server(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -76,15 +74,14 @@ class Server(object):
                 threading.Thread(target=self.handle_client, args=(client_socket, client_address)).start()
         except KeyboardInterrupt:
             logger.warning("Server interrupted by user")
-        finally:
-            self.server_socket.close()
-            logger.info("Server shut down")
+    
 
     def handle_client(self, client_socket, client_address):
         logger.debug(f"Handling client {client_address}")
         try:
             while True:
                 data = client_socket.recv(1024).decode()
+                logger.error(data)
                 if not data:
                     logger.info(f"Client {client_address} disconnected")
                     break
@@ -101,7 +98,7 @@ class Server(object):
                     self.filename = parts[1].strip() if len(parts) >= 2 else "rick.webm"
                     self.client_address = client_address[0]
                     self.client_udp_port = self.extract_udp_port(data)
-                    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                     if self.video is None:
 
                         try:
@@ -125,7 +122,7 @@ class Server(object):
                 elif data.startswith("PLAY"):
                     cseq_line = [line for line in data.split("\n") if line.startswith("CSeq")][0]
                     cseq_value = cseq_line.split(":")[1].strip()
-
+                    self.streaming.set()
                     response = (
                         f"RTSP/1.0 200 OK\r\n"
                         f"CSeq: {cseq_value}\r\n"
@@ -143,6 +140,7 @@ class Server(object):
                     cseq_value = cseq_line.split(":")[1].strip()
 
                     self.paused = True
+                    self.streaming.clear()
 
                     response = (
                         f"RTSP/1.0 200 OK\r\n"
@@ -164,20 +162,19 @@ class Server(object):
                     client_socket.send(response.encode())
                     logger.debug(f"Sent TEARDOWN OK")
 
+                    if self.udp_socket:
+                        self.udp_socket.close()
+                        self.udp_socket = None
                     self.video = None
                     self.streaming.clear()
 
-                    break
 
         except Exception as e:
             logger.error(f"Error handling client {client_address}: {e}")
-        finally:
-            client_socket.close()
-            logger.info(f"Connection with {client_address} closed")
 
     def send_udp_frame(self):
         data = self.video.next_frame()
         if data and len(data) > 0:
             frame_number = self.get_frame_number()
             udp_datagram = UDPDatagram(frame_number, data).get_datagram()
-            socketudp.sendto(udp_datagram, (address, port))
+            self.socket_udp.sendto(udp_datagram, (self.address, self.port))
