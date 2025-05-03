@@ -8,9 +8,9 @@ from tkinter import messagebox
 import tkinter as tk
 
 from loguru import logger
-
 from PIL import Image, ImageTk
 import io
+
 
 class Client(object):
     def __init__(self, server_port, filename, host , udp_port):
@@ -22,7 +22,8 @@ class Client(object):
 
         self.rtsp_socket = None
         self.seq = 1
-        self.session_id = None
+        self.session_id = "XARXES_00005017"  # Usamos fijo para compatibilidad
+        self.state = "INIT"  # Estado inicial
 
         self.playing = False
         self.paused = False
@@ -40,7 +41,6 @@ class Client(object):
         except Exception as e:
             logger.error(f"Could not bind UDP socket on port {self.udp_port}: {e}")
             messagebox.showerror("UDP Error", f"Port {self.udp_port} is already in use.\nTry another port.")
-
 
     def listen_udp(self):
         while True:
@@ -64,9 +64,11 @@ class Client(object):
             messagebox.showerror("Error conexio", f"NO es pot conectar amb el servidor")
 
     def send_setup_request(self):
-        if self.rtsp_socket is None or self.rtsp_socket._closed:
-            logger.error("RTSP socket is not connected")
+        if self.state != "INIT":
+            logger.warning("SETUP only allowed from INIT state")
+            self.text["text"] = "SETUP no permitido"
             return
+
         request = (
             f"SETUP {self.filename} RTSP/1.0\r\n"
             f"CSeq: {self.seq}\r\n"
@@ -76,10 +78,10 @@ class Client(object):
         try:
             self.rtsp_socket.send(request.encode())
             response = self.rtsp_socket.recv(1024).decode()
-            logger.debug(f"Rebut del servidor")
             logger.debug(response)
             if "200 OK" in response:
                 self.text["text"] = "SETUP OK"
+                self.state = "READY"
                 self.paused = False
             else:
                 self.text["text"] = "SETUP FAILED"
@@ -88,8 +90,9 @@ class Client(object):
             self.text["text"] = f"error SETUP: {e}"
 
     def send_play_request(self):
-        if self.playing and not self.paused:
-            logger.info(f"Already Playing")
+        if self.state != "READY" and self.state != "PAUSED":
+            logger.warning("PLAY only allowed from READY or PAUSED state")
+            self.text["text"] = "PLAY no permitido"
             return
 
         request = (
@@ -109,6 +112,7 @@ class Client(object):
                 if self.udp_socket is None:
                     self.create_udp_socket()
                     threading.Thread(target=self.listen_udp, daemon=True).start()
+                self.state = "PLAYING"
                 self.paused = False
                 self.playing = True
             else:
@@ -118,8 +122,9 @@ class Client(object):
             self.text["text"] = f"Error PLAY: {e}"
 
     def send_pause_request(self):
-        if not self.playing:
-            logger.info("Not playing. Ignoring PAUSE.")
+        if self.state != "PLAYING":
+            logger.warning("PAUSE only allowed from PLAYING state")
+            self.text["text"] = "PAUSE no permitido"
             return
 
         request = (
@@ -136,6 +141,7 @@ class Client(object):
 
             if "200 OK" in response:
                 self.text["text"] = "PAUSE OK ⏸️"
+                self.state = "PAUSED"
                 self.paused = True
             else:
                 self.text["text"] = "PAUSE FAILED ❌"
@@ -144,6 +150,10 @@ class Client(object):
             self.text["text"] = f"Error PAUSE: {e}"
 
     def send_teardown_request(self):
+        if self.state == "INIT":
+            self.text["text"] = "TEARDOWN no permitido en INIT"
+            return
+
         request = (
             f"TEARDOWN {self.filename} RTSP/1.0\r\n"
             f"CSeq: {self.seq + 1}\r\n"
@@ -161,7 +171,7 @@ class Client(object):
                     if self.udp_socket:
                         self.udp_socket.close()
                         self.udp_socket = None
-                    self.session_id = None
+                    self.state = "INIT"
                     self.playing = False
                     self.paused = False
                     self.seq = 1
@@ -201,7 +211,6 @@ class Client(object):
         if self.udp_socket:
             self.udp_socket.close()
             self.udp_socket = None
-        # DO NOT close RTSP socket
         self.root.destroy()
         logger.debug("Window closed")
         sys.exit(0)
@@ -214,30 +223,19 @@ class Client(object):
     def ui_play_event(self):
         logger.debug("Play button clicked")
         self.text["text"] = "Sending PLAY request..."
-        if self.rtsp_socket and not self.rtsp_socket._closed:
-            self.send_play_request()
-        else:
-            logger.error("RTSP socket not connected")
-            self.text["text"] = "Error: No RTSP connection"
+        self.send_play_request()
 
     def ui_pause_event(self):
         logger.debug("Pause button clicked")
         self.text["text"] = "Sending PAUSE request..."
-        if self.rtsp_socket and not self.rtsp_socket._closed and not self.paused:
-            self.send_pause_request()
-        else:
-            logger.error("RTSP socket not connected or already paused")
-            self.text["text"] = "Error: No RTSP connection"
+        self.send_pause_request()
 
     def ui_teardown_event(self):
         logger.debug("Teardown button clicked")
         self.text["text"] = "Sending TEARDOWN request..."
-        if self.rtsp_socket and not self.rtsp_socket._closed:
-            self.send_teardown_request()
-        else:
-            self.text["text"] = "No RTSP connection"
+        self.send_teardown_request()
 
     def updateMovie(self, data):
         photo = ImageTk.PhotoImage(Image.open(io.BytesIO(data)))
-        self.movie.configure(image = photo, height=380) 
+        self.movie.configure(image=photo, height=380) 
         self.movie.photo_image = photo
