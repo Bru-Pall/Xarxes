@@ -22,7 +22,7 @@ class Client(object):
 
         self.rtsp_socket = None
         self.seq = 1
-        self.session_id = "XARXES_00005017"  # Usamos fijo para compatibilidad
+        self.session_id = None 
         self.state = "INIT"  # Estado inicial
 
         self.playing = False
@@ -68,21 +68,32 @@ class Client(object):
             logger.warning("SETUP only allowed from INIT state")
             self.text["text"] = "SETUP no permitido"
             return
-
+        
         request = (
             f"SETUP {self.filename} RTSP/1.0\r\n"
             f"CSeq: {self.seq}\r\n"
-            f"Transport: RTP/UDP; client_port = {self.udp_port}\r\n"
+            f"Transport: RTP/UDP; client_port= {self.udp_port}\r\n"
+            f"\r\n"
         )
         logger.debug(f"Sending SETUP request:\n{request}")
         try:
             self.rtsp_socket.send(request.encode())
+            self.seq += 1
             response = self.rtsp_socket.recv(1024).decode()
             logger.debug(response)
             if "200 OK" in response:
                 self.text["text"] = "SETUP OK"
                 self.state = "READY"
                 self.paused = False
+
+                if self.udp_socket is None:
+                    self.create_udp_socket()
+                    threading.Thread(target=self.listen_udp, daemon=True).start()
+
+                for line in response.split("\n"):
+                    if line.strip().startswith("Session:"):
+                        self.session_id = line.split(":")[1].strip()
+                        logger.debug(f"Session ID received: {self.session_id}")
             else:
                 self.text["text"] = "SETUP FAILED"
         except Exception as e:
@@ -97,21 +108,20 @@ class Client(object):
 
         request = (
             f"PLAY {self.filename} RTSP/1.0\r\n"
-            f"CSeq: {self.seq + 1}\r\n"
+            f"CSeq: {self.seq}\r\n"
             f"Session: {self.session_id}\r\n"
+            f"\r\n"
         )
         logger.debug(f"Sending PLAY request:\n{request}")
 
         try:
             self.rtsp_socket.send(request.encode())
+            self.seq += 1
             response = self.rtsp_socket.recv(1024).decode()
             logger.debug(f"Received PLAY response:\n{response}")
 
             if "200 OK" in response:
                 self.text["text"] = "PLAY OK ✅"
-                if self.udp_socket is None:
-                    self.create_udp_socket()
-                    threading.Thread(target=self.listen_udp, daemon=True).start()
                 self.state = "PLAYING"
                 self.paused = False
                 self.playing = True
@@ -129,13 +139,15 @@ class Client(object):
 
         request = (
             f"PAUSE {self.filename} RTSP/1.0\r\n"
-            f"CSeq: {self.seq + 1}\r\n"
+            f"CSeq: {self.seq}\r\n"
             f"Session: {self.session_id}\r\n"
+            f"\r\n"
         )
         logger.debug(f"Sending PAUSE request:\n{request}")
 
         try:
             self.rtsp_socket.send(request.encode())
+            self.seq += 1
             response = self.rtsp_socket.recv(1024).decode()
             logger.debug(f"Received PAUSE response:\n{response}")
 
@@ -156,8 +168,9 @@ class Client(object):
 
         request = (
             f"TEARDOWN {self.filename} RTSP/1.0\r\n"
-            f"CSeq: {self.seq + 1}\r\n"
+            f"CSeq: {self.seq}\r\n"
             f"Session: {self.session_id}\r\n"
+            f"\r\n"
         )
         logger.debug(f"Sending TEARDOWN request:\n{request}")
         try:
