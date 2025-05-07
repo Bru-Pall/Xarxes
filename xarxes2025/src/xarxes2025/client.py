@@ -29,6 +29,11 @@ class Client(object):
         self.paused = False
         self.udp_socket = None
 
+        self.packets_lost = 0
+        self.packets_received = 0
+        self.total_packets = 0
+        self.last_seq = -1
+
         self.connect_to_server()
         self.create_ui()
 
@@ -47,12 +52,29 @@ class Client(object):
             try:
                 data, addr = self.udp_socket.recvfrom(65536)
                 logger.debug(f"Received UDP packet from {addr}")
-                datagrama = UDPDatagram(10,10)
+                datagrama = UDPDatagram(10, 10)
                 datagrama.decode(data)
+
+                current_seq = datagrama.get_seqnum()
+
+            # Contar perdidos
+                if self.last_seq != -1 and current_seq > self.last_seq + 1:
+                    self.packets_lost += current_seq - self.last_seq - 1
+
+                self.packets_received += 1
+                self.total_packets = self.packets_received + self.packets_lost
+                self.last_seq = current_seq
+
+                self.counter["text"] = (
+                    f"Seq Num:{self.total_packets} Lost:{self.packets_lost} OK:{self.packets_received}"
+                )
+                self.counter.update_idletasks()
+
                 self.updateMovie(datagrama.get_payload())
             except Exception as e:
                 logger.error(f"Error receiving UDP packet: {e}")
                 break
+
 
     def connect_to_server(self):
         self.rtsp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -65,8 +87,7 @@ class Client(object):
 
     def send_setup_request(self):
         if self.state != "INIT":
-            logger.warning("SETUP only allowed from INIT state")
-            self.text["text"] = "SETUP no permitido"
+            self.text["text"] = "Can't do setup right now"
             return
         
         request = (
@@ -82,7 +103,6 @@ class Client(object):
             response = self.rtsp_socket.recv(1024).decode()
             logger.debug(response)
             if "200 OK" in response:
-                self.text["text"] = "SETUP OK"
                 self.state = "READY"
                 self.paused = False
 
@@ -94,16 +114,18 @@ class Client(object):
                     if line.strip().startswith("Session:"):
                         self.session_id = line.split(":")[1].strip()
                         logger.debug(f"Session ID received: {self.session_id}")
+
+                self.text["text"] = (f"Setup done. Session ID:{self.session_id} \n Port: {self.udp_port} opened.(BIND OK)")
+            
             else:
-                self.text["text"] = "SETUP FAILED"
+                self.text["text"] = "Setup failed"
         except Exception as e:
             logger.error(f"Fallo d'enviament de SETUP: {e}")
             self.text["text"] = f"error SETUP: {e}"
 
     def send_play_request(self):
         if self.state != "READY" and self.state != "PAUSED":
-            logger.warning("PLAY only allowed from READY or PAUSED state")
-            self.text["text"] = "PLAY no permitido"
+            self.text["text"] = "Can't do play right now"
             return
 
         request = (
@@ -121,20 +143,19 @@ class Client(object):
             logger.debug(f"Received PLAY response:\n{response}")
 
             if "200 OK" in response:
-                self.text["text"] = "PLAY OK ✅"
+                self.text["text"] = "Playing"
                 self.state = "PLAYING"
                 self.paused = False
                 self.playing = True
             else:
-                self.text["text"] = "PLAY FAILED ❌"
+                self.text["text"] = "Play failed"
         except Exception as e:
             logger.error(f"Failed to send PLAY request: {e}")
             self.text["text"] = f"Error PLAY: {e}"
 
     def send_pause_request(self):
         if self.state != "PLAYING":
-            logger.warning("PAUSE only allowed from PLAYING state")
-            self.text["text"] = "PAUSE no permitido"
+            self.text["text"] = "Can't do pause right now"
             return
 
         request = (
@@ -152,18 +173,18 @@ class Client(object):
             logger.debug(f"Received PAUSE response:\n{response}")
 
             if "200 OK" in response:
-                self.text["text"] = "PAUSE OK ⏸️"
+                self.text["text"] = "Paused"
                 self.state = "PAUSED"
                 self.paused = True
             else:
-                self.text["text"] = "PAUSE FAILED ❌"
+                self.text["text"] = "Pause failed"
         except Exception as e:
             logger.error(f"Failed to send PAUSE request: {e}")
             self.text["text"] = f"Error PAUSE: {e}"
 
     def send_teardown_request(self):
         if self.state == "INIT":
-            self.text["text"] = "TEARDOWN no permitido en INIT"
+            self.text["text"] = "Can't do teardown right now"
             return
 
         request = (
@@ -180,7 +201,7 @@ class Client(object):
                 logger.debug(f"Received TEARDOWN response:\n{response}")
 
                 if "200 OK" in response:
-                    self.text["text"] = "TEARDOWN OK ✅"
+                    self.text["text"] = "Teardown"
                     if self.udp_socket:
                         self.udp_socket.close()
                         self.udp_socket = None
@@ -188,8 +209,11 @@ class Client(object):
                     self.playing = False
                     self.paused = False
                     self.seq = 1
+                    self.total_packets = 0
+                    self.packets_lost = 0
+                    self.packets_received = 0
                 else:
-                    self.text["text"] = "TEARDOWN FAILED ❌"
+                    self.text["text"] = "Teardown failed"
         except Exception as e:
             logger.error(f"Failed to send TEARDOWN request: {e}")
             self.text["text"] = f"Error TEARDOWN: {e}"
@@ -209,6 +233,9 @@ class Client(object):
 
         self.text = Label(self.root, height=3)
         self.text.grid(row=2, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5) 
+        self.counter = Label(self.root, height=2)
+        self.counter.grid(row=3, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5)
+
 
         return self.root
 
@@ -230,22 +257,22 @@ class Client(object):
 
     def ui_setup_event(self):
         logger.debug("Setup button clicked")
-        self.text["text"] = "Setup button clicked"
+        self.text["text"] = "Sending setup request..."
         self.send_setup_request()
 
     def ui_play_event(self):
         logger.debug("Play button clicked")
-        self.text["text"] = "Sending PLAY request..."
+        self.text["text"] = "Sending play request..."
         self.send_play_request()
 
     def ui_pause_event(self):
         logger.debug("Pause button clicked")
-        self.text["text"] = "Sending PAUSE request..."
+        self.text["text"] = "Sending pause request..."
         self.send_pause_request()
 
     def ui_teardown_event(self):
         logger.debug("Teardown button clicked")
-        self.text["text"] = "Sending TEARDOWN request..."
+        self.text["text"] = "Sending teardown request..."
         self.send_teardown_request()
 
     def updateMovie(self, data):
