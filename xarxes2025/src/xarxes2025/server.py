@@ -1,6 +1,7 @@
 import socket
 import threading
 import time
+import random
 
 from loguru import logger
 from xarxes2025.udpdatagram import UDPDatagram
@@ -63,6 +64,10 @@ class ClientSession(threading.Thread):
 
                 frame_data = self.video.next_frame()
                 if frame_data:
+                    if random.randint(1, 100) <= self.loss_rate:
+                        logger.debug(f"Dropped frame {self.video.get_frame_number()} due to loss_rate")
+                        self.video.next_frame()  # Asegúrate de avanzar el frame si se descarta
+                        continue
                     datagram = UDPDatagram(self.video.get_frame_number(), frame_data).get_datagram()
                     self.udp_socket.sendto(datagram, (self.client_address[0], self.client_udp_port))
                     frame_count += 1
