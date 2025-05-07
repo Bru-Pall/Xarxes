@@ -32,7 +32,6 @@ class ClientSession(threading.Thread):
 
                 logger.debug(f"Received from client {self.client_address}:\n{data}")
                 if data.startswith("SETUP"):
-                    logger.error(f"{data}")
                     self.handle_setup(data)
                 elif data.startswith("PLAY"):
                     self.handle_play(data)
@@ -40,7 +39,7 @@ class ClientSession(threading.Thread):
                     self.handle_pause(data)
                 elif data.startswith("TEARDOWN"):
                     self.handle_teardown(data)
-                    
+
         except Exception as e:
             logger.error(f"Error handling client {self.client_address}: {e}")
 
@@ -55,6 +54,7 @@ class ClientSession(threading.Thread):
 
     def start_streaming_udp(self):
         self.streaming.set()
+        frame_count = 0
         try:
             while self.streaming.is_set():
                 if self.paused_event.is_set():
@@ -65,18 +65,20 @@ class ClientSession(threading.Thread):
                 if frame_data:
                     datagram = UDPDatagram(self.video.get_frame_number(), frame_data).get_datagram()
                     self.udp_socket.sendto(datagram, (self.client_address[0], self.client_udp_port))
-                    logger.debug(f"Sent frame {self.video.get_frame_number()} to {self.client_address}")
+                    frame_count += 1
+
+                    if self.max_frames > 0 and frame_count >= self.max_frames:
+                        logger.info(f"Reached max_frames={self.max_frames}. Stopping streaming.")
+                        break
+
                     time.sleep(1 / self.frame_rate)
                 else:
-                    logger.info(f"No more frames to send to {self.client_address}")
                     break
         except Exception as e:
             logger.error(f"Error in UDP streaming: {e}")
 
     def handle_setup(self, data):
-    # Bloquejar SETUP si no estem a INIT
         if self.state != "INIT":
-            logger.warning(f"SETUP ignored: current state is {self.state}")
             cseq_value = self.get_cseq(data)
             response = (
                 f"RTSP/1.0 400 Method Not Valid in This State\r\n"
@@ -86,7 +88,6 @@ class ClientSession(threading.Thread):
             self.client_socket.send(response.encode())
             return
 
-
         cseq_value = self.get_cseq(data)
         filename = data.split(" ")[1].strip() if len(data.split(" ")) >= 2 else "rick.webm"
         self.client_udp_port = self.extract_udp_port(data)
@@ -94,7 +95,6 @@ class ClientSession(threading.Thread):
 
         try:
             self.video = VideoProcessor(filename)
-            logger.info(f"Video loaded: {filename}")
         except Exception as e:
             logger.error(f"Failed to load video: {e}")
             return
@@ -108,8 +108,6 @@ class ClientSession(threading.Thread):
             f"Session: {self.sessionid}\r\n"
         )
         self.client_socket.send(response.encode())
-        logger.debug(f"Sent SETUP OK to {self.client_address}")
-
 
     def handle_play(self, data):
         cseq_value = self.get_cseq(data)
@@ -121,7 +119,6 @@ class ClientSession(threading.Thread):
             f"Session: {self.sessionid}\r\n"
         )
         self.client_socket.send(response.encode())
-        logger.debug(f"Sent PLAY OK to {self.client_address}")
         self.state = "PLAYING"
 
         if not self.streaming.is_set():
@@ -137,7 +134,6 @@ class ClientSession(threading.Thread):
             f"Session: {self.sessionid}\r\n"
         )
         self.client_socket.send(response.encode())
-        logger.debug(f"Sent PAUSE OK to {self.client_address}")
         self.state = "READY"
 
     def handle_teardown(self, data):
@@ -149,14 +145,13 @@ class ClientSession(threading.Thread):
             f"Session: {self.sessionid}\r\n"
         )
         self.client_socket.send(response.encode())
-        logger.debug(f"Sent TEARDOWN OK to {self.client_address}")
 
         self.streaming.clear()
         self.paused_event.clear()
         if self.udp_socket:
             self.udp_socket.close()
             self.udp_socket = None
-        
+
         self.state = "INIT"
         self.video = None
 
@@ -177,19 +172,16 @@ class Server(object):
         self.error = error
         self.running = True
 
-        logger.debug(f"Server created")
         self.start_tcp_server()
 
     def start_tcp_server(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen(5)
-        logger.info(f"RTSP Server listening on {self.host}:{self.port}")
 
         try:
             while self.running:
                 client_socket, client_address = self.server_socket.accept()
-                logger.info(f"New client connected from {client_address}")
                 session = ClientSession(
                     client_socket,
                     client_address,
