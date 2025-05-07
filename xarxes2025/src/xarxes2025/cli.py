@@ -75,8 +75,9 @@ def cli(ctx, debug, debug_level, debug_file, debug_filename):
 )
 @click.option(
     "--max-frames",
-    help="Maximum number of frames to stream",
-    default=None,
+    help="Maximum number of frames to stream (0 = ilimitado)",
+    default=0,
+    show_default=True,
     type=int
 )
 @click.option(
