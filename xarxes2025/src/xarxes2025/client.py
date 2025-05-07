@@ -247,6 +247,9 @@ class Client(object):
         return button
 
     def ui_close_window(self):
+        logger.debug("Window close event triggered")
+        if self.state != "INIT":
+            self.send_teardown_request()  # <-- forzar TEARDOWN si no se ha hecho
         self.playing = False
         if self.udp_socket:
             self.udp_socket.close()
@@ -254,6 +257,7 @@ class Client(object):
         self.root.destroy()
         logger.debug("Window closed")
         sys.exit(0)
+
 
     def ui_setup_event(self):
         logger.debug("Setup button clicked")
